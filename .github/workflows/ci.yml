@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  mci-core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mci-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: ruff check src tests
+      - name: Format check (ruff)
+        run: ruff format --check src tests
+      - name: Type check (mypy)
+        run: mypy src
+      - name: Unit tests
+        run: pytest -m "not integration"

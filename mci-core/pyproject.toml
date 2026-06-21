@@ -1,0 +1,44 @@
+[project]
+name = "mci-core"
+version = "0.1.0"
+description = "Master Customer Index - Identity Resolution Service (Project 1)"
+requires-python = ">=3.12"
+
+# boto3 is preinstalled in the AWS Lambda Python runtime, so it is NOT a
+# runtime dependency we ship. We pin it here only so local dev and tests
+# match the Lambda environment.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "boto3>=1.34",
+    "botocore>=1.34",
+    "pytest>=8.0",
+    "moto>=5.0",          # mocks DynamoDB/S3 in unit tests, no real AWS needed
+    "ruff>=0.6",          # linter + formatter
+    "mypy>=1.11",         # static type checking
+    "boto3-stubs[dynamodb,s3,lambda]>=1.34",  # types for boto3
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]  # errors, pyflakes, import-sort, pyupgrade, bugbear
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: tests that need DynamoDB Local (deselect with -m 'not integration')",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
