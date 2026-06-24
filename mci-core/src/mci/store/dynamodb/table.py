@@ -31,6 +31,9 @@ from mci.model.types import (
 # DynamoDB hard limit: BatchGetItem accepts at most 100 keys per request.
 BATCH_GET_MAX_KEYS = 100
 
+# GSI for reverse lookups (internal UUID -> external id), defined in the spec.
+INTERNAL_ID_GSI = "internal-customer-id-index"
+
 
 def _chunk(items: list, size: int) -> list[list]:
     """Split a list into chunks of at most `size`."""
@@ -127,6 +130,47 @@ class MciStore:
                 winner = self._get_one(pk)
                 if winner is not None:
                     return winner.internal_customer_id
+            raise
+
+    def query_by_internal_id(self, tenant_id: str, internal_customer_id: str) -> str | None:
+        """Reverse lookup: internal UUID -> external id, via the GSI.
+
+        The main table is keyed by partition_key (tenant#external), so it cannot
+        be searched by internal UUID directly. The GSI is a second index keyed on
+        internal_customer_id, which makes this query possible. Returns the
+        external id, or None if no mapping has that UUID for this tenant.
+        """
+        from boto3.dynamodb.conditions import Key
+
+        response = self._table.query(
+            IndexName=INTERNAL_ID_GSI,
+            KeyConditionExpression=(
+                Key("internal_customer_id").eq(internal_customer_id)
+                & Key("tenant_id").eq(tenant_id)
+            ),
+        )
+        items = response.get("Items", [])
+        if not items:
+            return None
+        return str(items[0]["external_customer_id"])
+
+    def delete(self, tenant_id: str, external_customer_id: str) -> bool:
+        """Delete one mapping. Returns True if a row existed and was removed,
+        False if there was nothing to delete.
+
+        Uses a condition expression so the delete only "counts" when the row
+        actually existed; that lets us report deleted vs not_found accurately.
+        """
+        pk = build_partition_key(tenant_id, external_customer_id)
+        try:
+            self._table.delete_item(
+                Key={"partition_key": pk, "sort_key": SORT_KEY_PLACEHOLDER},
+                ConditionExpression="attribute_exists(partition_key)",
+            )
+            return True
+        except ClientError as err:
+            if err.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False  # nothing there to delete
             raise
 
     def _get_one(self, partition_key: str) -> MciItem | None:
