@@ -16,6 +16,7 @@ verbose {"S": "..."} attribute descriptors. That keeps this code readable.
 from __future__ import annotations
 
 import uuid
+from typing import Any, cast
 
 import boto3
 from botocore.exceptions import ClientError
@@ -66,9 +67,7 @@ class MciStore:
         }
 
         for chunk in _chunk(list(unique.keys()), BATCH_GET_MAX_KEYS):
-            request_keys = [
-                {"partition_key": pk, "sort_key": SORT_KEY_PLACEHOLDER} for pk in chunk
-            ]
+            request_keys = [{"partition_key": pk, "sort_key": SORT_KEY_PLACEHOLDER} for pk in chunk]
             self._batch_get_with_retry(request_keys, found)
 
         return found
@@ -80,14 +79,12 @@ class MciStore:
 
         # Loop until DynamoDB returns no more UnprocessedKeys.
         while keys_to_fetch:
-            response = client.batch_get_item(
-                RequestItems={table_name: {"Keys": keys_to_fetch}}
-            )
+            response = client.batch_get_item(RequestItems={table_name: {"Keys": keys_to_fetch}})
             for raw in response.get("Responses", {}).get(table_name, []):
                 item = MciStore._deserialize(raw)
                 found[item.partition_key] = item
 
-            unprocessed = response.get("UnprocessedKeys", {}).get(table_name, {})
+            unprocessed: Any = response.get("UnprocessedKeys", {}).get(table_name, {})
             keys_to_fetch = unprocessed.get("Keys", []) if unprocessed else []
 
     def put_if_absent(self, key: CustomerKey, read_only: bool = False) -> str:
@@ -120,7 +117,7 @@ class MciStore:
 
         try:
             self._table.put_item(
-                Item=item.to_item(),
+                Item=cast("Any", item.to_item()),
                 ConditionExpression="attribute_not_exists(partition_key)",
             )
             return new_uuid

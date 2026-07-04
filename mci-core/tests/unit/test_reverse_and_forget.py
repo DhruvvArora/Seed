@@ -68,9 +68,7 @@ def test_reverse_lookup_returns_external(env):
     uuid1 = out["acme"]["ext1"]
     uuid2 = out["acme"]["ext2"]
 
-    result = getext_h.handler(
-        {"tenant_id": "acme", "internal_customer_ids": [uuid1, uuid2]}
-    )
+    result = getext_h.handler({"tenant_id": "acme", "internal_customer_ids": [uuid1, uuid2]})
     assert result == {uuid1: "ext1", uuid2: "ext2"}
 
 
@@ -113,9 +111,7 @@ def test_forget_actually_removes_mapping(env):
     forget_h.handler({"tenant_id": "acme", "external_customer_ids": ["ext1"]})
 
     # After deletion, resolving ext1 again creates a NEW uuid (old mapping gone).
-    out2 = getint_h.handler(
-        {"customer_keys": [{"tenant_id": "acme", "customer_id": "ext1"}]}
-    )
+    out2 = getint_h.handler({"customer_keys": [{"tenant_id": "acme", "customer_id": "ext1"}]})
     assert out2["acme"]["ext1"] != original_uuid
 
 

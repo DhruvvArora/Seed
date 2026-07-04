@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 
@@ -52,12 +52,12 @@ def _write_audit(tenant_id: str, deleted: list[str], not_found: list[str]) -> No
         return
     record = {
         "tenant_id": tenant_id,
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
         "deleted": deleted,
         "not_found": not_found,
         "action": "forget_external_customer_ids",
     }
-    ts = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S_%f")
+    ts = datetime.now(UTC).strftime("%Y/%m/%d/%H%M%S_%f")
     _get_s3().put_object(
         Bucket=AUDIT_BUCKET,
         Key=f"forget-audit/{tenant_id}/{ts}.json",
@@ -82,7 +82,7 @@ def handler(event: dict, context=None) -> dict[str, list[str]]:
             lambda ext: store.delete(tenant_id, ext),
             workers=WORKERS,
         )
-        for ext, was_deleted in zip(unique_ids, results):
+        for ext, was_deleted in zip(unique_ids, results, strict=True):
             (deleted if was_deleted else not_found).append(ext)
 
     # Compliance: always record that the request was processed.

@@ -16,15 +16,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import TypeVar
-
-T = TypeVar("T")  # input item type
-R = TypeVar("R")  # result type
 
 DEFAULT_WORKERS = 20
 
 
-def run_parallel(
+def run_parallel[T, R](
     items: Iterable[T],
     fn: Callable[[T], R],
     workers: int = DEFAULT_WORKERS,
