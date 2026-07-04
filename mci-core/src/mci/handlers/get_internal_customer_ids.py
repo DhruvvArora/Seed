@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 
@@ -85,7 +85,7 @@ def _log_new_mappings(new_mappings: list[dict]) -> None:
     if not new_mappings or not LOG_BUCKET:
         return
     body = "\n".join(json.dumps(m) for m in new_mappings)
-    ts = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S_%f")
+    ts = datetime.now(UTC).strftime("%Y/%m/%d/%H%M%S_%f")
     _get_s3().put_object(
         Bucket=LOG_BUCKET,
         Key=f"new-mappings/{ts}.jsonl",
@@ -130,7 +130,7 @@ def handler(event: dict, context=None) -> dict:
             lambda k: store.put_if_absent(k, read_only=read_only),
             workers=WORKERS,
         )
-        for key, internal_uuid in zip(missing, created_uuids):
+        for key, internal_uuid in zip(missing, created_uuids, strict=True):
             pk = build_partition_key(key.tenant_id, key.customer_id)
             resolved[pk] = internal_uuid
             new_mappings.append(

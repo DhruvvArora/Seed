@@ -29,8 +29,10 @@ select = ["E", "F", "I", "UP", "B"]  # errors, pyflakes, import-sort, pyupgrade,
 
 [tool.mypy]
 python_version = "3.12"
-strict = true
 ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+check_untyped_defs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -8,14 +8,15 @@ layer never pass raw dicts around.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import cast
 
 SORT_KEY_PLACEHOLDER = "NULL"  # spec: sort_key is always the literal string "NULL"
 
 
 def utc_now_iso() -> str:
     """ISO 8601 UTC timestamp for audit events, e.g. '2026-06-20T18:30:00+00:00'."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def build_partition_key(tenant_id: str, external_customer_id: str) -> str:
@@ -70,11 +71,8 @@ class MciItem:
     @classmethod
     def from_item(cls, item: dict[str, object]) -> MciItem:
         """Reconstruct from a DynamoDB attribute map."""
-        raw_events = item.get("events", []) or []
-        events = [
-            AuditEvent(action=str(e["action"]), time=str(e["time"]))
-            for e in raw_events  # type: ignore[union-attr]
-        ]
+        raw_events = cast("list[dict[str, str]]", item.get("events") or [])
+        events = [AuditEvent(action=str(e["action"]), time=str(e["time"])) for e in raw_events]
         return cls(
             tenant_id=str(item["tenant_id"]),
             external_customer_id=str(item["external_customer_id"]),

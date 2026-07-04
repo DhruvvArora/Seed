@@ -13,6 +13,7 @@ Real tests from the spec come next, e.g.:
 def test_scaffold_imports():
     import mci  # noqa: F401
     import mci.handlers.get_internal_customer_ids  # noqa: F401
-    import mci.store.dynamodb.table  # noqa: F401
     import mci.parallel.pool  # noqa: F401
+    import mci.store.dynamodb.table  # noqa: F401
+
     assert True

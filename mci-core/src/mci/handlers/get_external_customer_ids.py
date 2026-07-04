@@ -52,7 +52,7 @@ def handler(event: dict, context=None) -> dict[str, str]:
     )
 
     output: dict[str, str] = {}
-    for uid, external in zip(unique_ids, externals):
+    for uid, external in zip(unique_ids, externals, strict=True):
         if external is not None:  # omit UUIDs with no mapping
             output[uid] = external
     return output
