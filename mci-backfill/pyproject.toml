@@ -1,0 +1,51 @@
+[project]
+name = "mci-backfill"
+version = "0.1.0"
+description = "MCI Backfill Pipeline - one-time historical identity migration (Project 2)"
+requires-python = ">=3.12"
+
+# Runtime dependency on the MCI Core package: backfill resolves IDs by invoking
+# the MCI Lambda through mci-core's invoker client. boto3 is provided by the
+# Lambda runtime, so it is a dev-only dependency (below), not shipped here.
+#
+# mci-core is a LOCAL package in this monorepo, not on PyPI. It is supplied as
+# an editable install from ../mci-core at install time (see README). Declaring
+# it here keeps the dependency honest; the install command points pip at the
+# local path so it never tries to fetch it from an index.
+dependencies = ["mci-core"]
+
+[project.optional-dependencies]
+dev = [
+    "boto3>=1.34",
+    "botocore>=1.34",
+    "pytest>=8.0",
+    "moto>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "boto3-stubs[dynamodb,s3,lambda,athena,stepfunctions]>=1.34",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: tests that need real AWS (deselect with -m 'not integration')",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
