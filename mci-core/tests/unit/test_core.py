@@ -143,3 +143,28 @@ def test_concurrent_same_key_no_duplicate_uuid():
     results = run_parallel(range(20), lambda _: store.put_if_absent(key), workers=20)
 
     assert len(set(results)) == 1  # exactly one UUID across all 20 threads
+
+
+@mock_aws
+def test_put_if_absent_honors_supplied_internal_id():
+    """A caller-supplied internal id is used verbatim when creating a mapping."""
+    dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+    _create_table(dynamodb)
+    store = MciStore(TABLE_NAME, dynamodb_resource=dynamodb)
+
+    # Day-0 style: internal id equals the external id.
+    resolved = store.put_if_absent(CustomerKey("t1", "ext1"), internal_id_override="ext1")
+    assert resolved == "ext1"
+
+
+@mock_aws
+def test_supplied_internal_id_never_repoints_existing_mapping():
+    """The override only affects CREATE. An established identity is immutable:
+    supplying a different internal id for an existing key returns the original."""
+    dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+    _create_table(dynamodb)
+    store = MciStore(TABLE_NAME, dynamodb_resource=dynamodb)
+
+    original = store.put_if_absent(CustomerKey("t1", "ext1"))  # fresh UUID
+    again = store.put_if_absent(CustomerKey("t1", "ext1"), internal_id_override="something-else")
+    assert again == original  # override ignored; existing mapping wins

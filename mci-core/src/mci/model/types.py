@@ -26,10 +26,18 @@ def build_partition_key(tenant_id: str, external_customer_id: str) -> str:
 
 @dataclass(frozen=True)
 class CustomerKey:
-    """One input pair to resolve. `customer_id` is the EXTERNAL id from a source system."""
+    """One input pair to resolve. `customer_id` is the EXTERNAL id from a source system.
+
+    `internal_customer_id` is normally None: MCI mints a fresh UUID on create.
+    A caller may optionally supply it to pin the internal id for a new mapping
+    (the store honors it via `internal_id_override`). This is a narrow, generic
+    capability; the backfill pipeline uses it to set internal == external, but
+    the core service has no notion of that migration.
+    """
 
     tenant_id: str
     customer_id: str
+    internal_customer_id: str | None = None
 
 
 @dataclass

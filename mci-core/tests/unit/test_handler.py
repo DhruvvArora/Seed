@@ -120,3 +120,22 @@ def test_multi_tenant_output_shape(mci_env):
     assert set(out["t2"].keys()) == {"a"}
     # t1#a and t2#a are different keys, so different UUIDs
     assert out["t1"]["a"] != out["t2"]["a"]
+
+
+@mock_aws
+def test_supplied_internal_id_per_key(mci_env):
+    """The handler honors a per-key internal_customer_id (day-0: internal==external),
+    while an unpinned key in the same batch still gets a minted UUID."""
+    dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+    _create_table(dynamodb)
+
+    event = {
+        "customer_keys": [
+            {"tenant_id": "t1", "customer_id": "ext1", "internal_customer_id": "ext1"},
+            {"tenant_id": "t1", "customer_id": "ext2"},  # no pin: minted UUID
+        ]
+    }
+    out = h.handler(event)
+
+    assert out["t1"]["ext1"] == "ext1"  # pinned value used verbatim
+    assert out["t1"]["ext2"] != "ext2"  # minted UUID, not the external id

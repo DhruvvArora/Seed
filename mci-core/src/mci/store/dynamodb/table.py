@@ -87,16 +87,29 @@ class MciStore:
             unprocessed: Any = response.get("UnprocessedKeys", {}).get(table_name, {})
             keys_to_fetch = unprocessed.get("Keys", []) if unprocessed else []
 
-    def put_if_absent(self, key: CustomerKey, read_only: bool = False) -> str:
+    def put_if_absent(
+        self,
+        key: CustomerKey,
+        read_only: bool = False,
+        internal_id_override: str | None = None,
+    ) -> str:
         """Resolve one key to an internal UUID, creating the mapping if needed.
 
         Returns the internal_customer_id. The flow:
           1. If read_only, only read; raise if the mapping does not exist.
-          2. Otherwise generate a fresh UUID and attempt a conditional PutItem
-             that only succeeds if the partition_key does not already exist.
+          2. Otherwise use `internal_id_override` if the caller supplied one,
+             else generate a fresh UUID, and attempt a conditional PutItem that
+             only succeeds if the partition_key does not already exist.
           3. If the condition fails, another caller won the race: re-read and
              return the UUID they wrote. This is what makes concurrent writes
              for the same key safe (no duplicate UUIDs).
+
+        `internal_id_override` is a narrow capability: it only affects the id
+        chosen when CREATING a new mapping. An already-existing mapping is
+        always returned unchanged, so a caller can never silently repoint an
+        established identity. The backfill pipeline uses this to set
+        internal == external for day-0 records; the core service itself has no
+        knowledge of that migration.
         """
         pk = build_partition_key(key.tenant_id, key.customer_id)
 
@@ -107,11 +120,11 @@ class MciStore:
         if read_only:
             raise KeyError(f"No mapping for {pk} and read_only=True")
 
-        new_uuid = str(uuid.uuid4())
+        new_internal_id = internal_id_override or str(uuid.uuid4())
         item = MciItem(
             tenant_id=key.tenant_id,
             external_customer_id=key.customer_id,
-            internal_customer_id=new_uuid,
+            internal_customer_id=new_internal_id,
             events=[AuditEvent(action="create_item")],
         )
 
@@ -120,7 +133,7 @@ class MciStore:
                 Item=cast("Any", item.to_item()),
                 ConditionExpression="attribute_not_exists(partition_key)",
             )
-            return new_uuid
+            return new_internal_id
         except ClientError as err:
             if err.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 # Lost the race. Re-read to get the winner's UUID.
