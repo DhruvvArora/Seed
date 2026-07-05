@@ -1,0 +1,278 @@
+{
+  "Comment": "MCI Backfill Pipeline (Project 2). One-time migration: dedups historical customer ids across 4 Athena source tables, then per tenant (max 3 concurrent) walks all rows in 10,000-row batches creating day-0 MCI mappings (internal_customer_id == external_customer_id). Athena queries that need typed results back (min/max/count, the customer id batch) go through the athena-query-runner Lambda rather than raw ASL result parsing; only the CTAS and DROP, which need no result data, use the plain Athena SDK integration directly. The temp Athena table is dropped on both the success and failure paths, since Step Functions has no built-in 'finally'; DropTempTableOnFailure exists purely so cleanup runs before the workflow reports failure.",
+  "StartAt": "CollectCustomerIDs",
+  "States": {
+    "CollectCustomerIDs": {
+      "Type": "Task",
+      "Comment": "State 1: CTAS query (01_ctas_collect_customer_ids.sql). Dedups all 4 source tables and assigns 0-indexed row numbers per tenant. No result data is needed back, only completion, so this stays a plain Athena SDK integration. If this fails, no temp table exists yet, so there is nothing to clean up.",
+      "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+      "Parameters": {
+        "QueryExecutionContext": {
+          "Database.$": "$.athena_database"
+        },
+        "QueryString.$": "$.ctas_query",
+        "WorkGroup": "backfill-workgroup",
+        "ResultConfiguration": {
+          "OutputLocation.$": "$.athena_output_location"
+        }
+      },
+      "ResultPath": "$.collect_result",
+      "Next": "ListTenants",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "FailWithoutCleanup"
+        }
+      ]
+    },
+
+    "ListTenants": {
+      "Type": "Task",
+      "Comment": "State 2: invokes the list-tenants Lambda. Returns tenants, the array the Map state below iterates over.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ListTenantsFunctionArn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "tenants.$": "$.Payload.tenants"
+      },
+      "ResultPath": "$.list_tenants_result",
+      "Next": "InvokeBackfillMCI",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "DropTempTableOnFailure"
+        }
+      ]
+    },
+
+    "InvokeBackfillMCI": {
+      "Type": "Map",
+      "Comment": "State 3: fans out over tenants, MaxConcurrency 3 (controlled blast radius). Each iteration runs the inner per-tenant state machine below.",
+      "ItemsPath": "$.list_tenants_result.tenants",
+      "ItemSelector": {
+        "tenant_id.$": "$$.Map.Item.Value",
+        "temp_table.$": "$.temp_table",
+        "athena_database.$": "$.athena_database",
+        "athena_output_location.$": "$.athena_output_location",
+        "batch_step": 10000
+      },
+      "MaxConcurrency": 3,
+      "ResultPath": "$.map_result",
+      "Iterator": {
+        "StartAt": "GetMinMaxRowNumber",
+        "States": {
+          "GetMinMaxRowNumber": {
+            "Type": "Task",
+            "Comment": "Runs 02_get_min_max_row_number.sql through athena-query-runner, which polls the query to completion and returns typed ints (no CSV-grid parsing in the ASL). row_count is what feeds the iterator's max_row; min_row is always 0 under the 0-indexed CTAS contract. See mci-backfill/athena/README.md.",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${AthenaQueryRunnerFunctionArn}",
+              "Payload": {
+                "operation": "min_max_row_number",
+                "temp_table.$": "$.temp_table",
+                "tenant_id.$": "$.tenant_id",
+                "athena_database.$": "$.athena_database",
+                "athena_output_location.$": "$.athena_output_location"
+              }
+            },
+            "ResultSelector": {
+              "row_count.$": "$.Payload.row_count"
+            },
+            "ResultPath": "$.min_max_result",
+            "Next": "ConfigureCount"
+          },
+
+          "ConfigureCount": {
+            "Type": "Pass",
+            "Comment": "Seeds the iterator loop. current_offset starts at 0 (min_row is always 0 under the 0-indexed CTAS contract); max_row is the tenant's row COUNT, an exclusive upper bound, not the highest row_num.",
+            "Parameters": {
+              "tenant_id.$": "$.tenant_id",
+              "temp_table.$": "$.temp_table",
+              "athena_database.$": "$.athena_database",
+              "athena_output_location.$": "$.athena_output_location",
+              "batch_step.$": "$.batch_step",
+              "current_offset": 0,
+              "max_row.$": "$.min_max_result.row_count"
+            },
+            "Next": "IteratorUtil"
+          },
+
+          "IteratorUtil": {
+            "Type": "Task",
+            "Comment": "Calls backfill-iteration-utility. Pure arithmetic, no AWS calls inside the Lambda; see mci-backfill/src/backfill/handlers/iteration_utility.py.",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${IterationUtilityFunctionArn}",
+              "Payload": {
+                "current_offset.$": "$.current_offset",
+                "batch_step.$": "$.batch_step",
+                "max_row.$": "$.max_row"
+              }
+            },
+            "ResultSelector": {
+              "start.$": "$.Payload.start",
+              "end.$": "$.Payload.end",
+              "next_offset.$": "$.Payload.next_offset",
+              "is_done.$": "$.Payload.is_done"
+            },
+            "ResultPath": "$.batch_range",
+            "Next": "GetCustomerIDs"
+          },
+
+          "GetCustomerIDs": {
+            "Type": "Task",
+            "Comment": "Runs 03_get_customer_ids_batch.sql through athena-query-runner for [start, end] (inclusive, 0-indexed), returning a real JSON array of customer_ids rather than Athena's bracketed ARRAY_AGG string.",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${AthenaQueryRunnerFunctionArn}",
+              "Payload": {
+                "operation": "customer_ids_batch",
+                "temp_table.$": "$.temp_table",
+                "tenant_id.$": "$.tenant_id",
+                "start.$": "$.batch_range.start",
+                "end.$": "$.batch_range.end",
+                "athena_database.$": "$.athena_database",
+                "athena_output_location.$": "$.athena_output_location"
+              }
+            },
+            "ResultSelector": {
+              "customer_ids.$": "$.Payload.customer_ids"
+            },
+            "ResultPath": "$.customer_ids_result",
+            "Next": "BackfillMCI"
+          },
+
+          "BackfillMCI": {
+            "Type": "Task",
+            "Comment": "Calls backfill-mci with day0=true. Retries on throttling per spec: Lambda.TooManyRequestsException or States.TaskFailed, 3 attempts, 30s base interval, 2.0 backoff rate.",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${BackfillMciFunctionArn}",
+              "Payload": {
+                "tenant_id.$": "$.tenant_id",
+                "customer_ids.$": "$.customer_ids_result.customer_ids",
+                "day0": true
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": ["Lambda.TooManyRequestsException", "States.TaskFailed"],
+                "IntervalSeconds": 30,
+                "MaxAttempts": 3,
+                "BackoffRate": 2.0
+              }
+            ],
+            "ResultSelector": {
+              "records_processed.$": "$.Payload.records_processed"
+            },
+            "ResultPath": "$.backfill_result",
+            "Next": "IsCountReached"
+          },
+
+          "IsCountReached": {
+            "Type": "Choice",
+            "Comment": "Loops back with the advanced offset until iteration-utility reports is_done. is_done/next_offset were computed by IteratorUtil before this batch ran.",
+            "Choices": [
+              {
+                "Variable": "$.batch_range.is_done",
+                "BooleanEquals": false,
+                "Next": "AdvanceOffset"
+              }
+            ],
+            "Default": "TenantDone"
+          },
+
+          "AdvanceOffset": {
+            "Type": "Pass",
+            "Comment": "Carries next_offset forward as the new current_offset for the next loop iteration.",
+            "Parameters": {
+              "tenant_id.$": "$.tenant_id",
+              "temp_table.$": "$.temp_table",
+              "athena_database.$": "$.athena_database",
+              "athena_output_location.$": "$.athena_output_location",
+              "batch_step.$": "$.batch_step",
+              "current_offset.$": "$.batch_range.next_offset",
+              "max_row.$": "$.max_row"
+            },
+            "Next": "IteratorUtil"
+          },
+
+          "TenantDone": {
+            "Type": "Pass",
+            "Comment": "Terminal state for one tenant's Map iteration.",
+            "End": true
+          }
+        }
+      },
+      "Next": "DropTempTable",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "DropTempTableOnFailure"
+        }
+      ]
+    },
+
+    "DropTempTable": {
+      "Type": "Task",
+      "Comment": "Cleanup on the success path. 04_drop_temp_table.sql. No result data needed, so this stays a plain Athena SDK integration.",
+      "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+      "Parameters": {
+        "QueryExecutionContext": {
+          "Database.$": "$.athena_database"
+        },
+        "QueryString.$": "States.Format('DROP TABLE IF EXISTS {}', $.temp_table)",
+        "WorkGroup": "backfill-workgroup",
+        "ResultConfiguration": {
+          "OutputLocation.$": "$.athena_output_location"
+        }
+      },
+      "ResultPath": "$.drop_result",
+      "End": true
+    },
+
+    "DropTempTableOnFailure": {
+      "Type": "Task",
+      "Comment": "Same drop query as DropTempTable, reached only via a Catch from ListTenants or InvokeBackfillMCI. Step Functions has no native finally, so this state exists to guarantee the temp table (and its S3 data) is cleaned up even when the run fails partway through, before the workflow reports failure via FailPipeline.",
+      "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+      "Parameters": {
+        "QueryExecutionContext": {
+          "Database.$": "$.athena_database"
+        },
+        "QueryString.$": "States.Format('DROP TABLE IF EXISTS {}', $.temp_table)",
+        "WorkGroup": "backfill-workgroup",
+        "ResultConfiguration": {
+          "OutputLocation.$": "$.athena_output_location"
+        }
+      },
+      "ResultPath": "$.drop_result",
+      "Next": "FailPipeline",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.drop_error",
+          "Next": "FailPipeline"
+        }
+      ]
+    },
+
+    "FailWithoutCleanup": {
+      "Type": "Fail",
+      "Comment": "Reached only if CollectCustomerIDs itself fails, before any temp table exists, so no cleanup step is needed.",
+      "Error": "BackfillCollectCustomerIDsFailed",
+      "Cause": "The CTAS query failed before any temp table was created; no cleanup required."
+    },
+
+    "FailPipeline": {
+      "Type": "Fail",
+      "Comment": "Reached after cleanup has run (successfully or not) following a failure in ListTenants or InvokeBackfillMCI.",
+      "Error": "BackfillPipelineFailed",
+      "Cause": "The backfill pipeline failed after the temp table was created; cleanup was attempted before this failure was reported."
+    }
+  }
+}

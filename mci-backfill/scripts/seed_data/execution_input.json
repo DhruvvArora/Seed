@@ -1,0 +1,6 @@
+{
+  "temp_table": "backfill_live_test.backfill_temp_livetest",
+  "athena_database": "backfill_live_test",
+  "athena_output_location": "s3://dev-backfill-temp/query-results/",
+  "ctas_query": "CREATE TABLE backfill_live_test.backfill_temp_livetest WITH (format = 'PARQUET', write_compression = 'SNAPPY') AS WITH all_customer_ids AS (SELECT DISTINCT tenant_id, customer_id FROM backfill_live_test.action_events UNION SELECT DISTINCT tenant_id, customer_id FROM backfill_live_test.audience_membership UNION SELECT DISTINCT tenant_id, customer_id FROM backfill_live_test.ingested_attributes UNION SELECT DISTINCT tenant_id, customer_id FROM backfill_live_test.transactions) SELECT tenant_id, customer_id, ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY customer_id) - 1 AS row_num FROM all_customer_ids WHERE tenant_id NOT IN ('tenant-test')"
+}
