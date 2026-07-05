@@ -46,6 +46,18 @@ variable "athena_source_database" {
   type        = string
 }
 
+variable "backfill_mci_memory_size" {
+  description = <<-EOT
+    Memory for the backfill-mci Lambda. Spec calls for 8192 MB (it processes
+    large batches), but some AWS accounts have a lower per-function memory
+    quota (older accounts default to 3008 MB, not the newer 10,240 MB ceiling).
+    Override this to fit your account's actual quota for a small test run;
+    keep the 8192 default for a production-sized deployment.
+  EOT
+  type        = number
+  default     = 8192
+}
+
 variable "temp_bucket_retention_days" {
   description = "How long the backfill temp bucket keeps objects before S3 auto-expires them. This is a one-time migration, so temp data has no reason to linger past the run plus a safety margin."
   type        = number

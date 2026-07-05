@@ -67,7 +67,7 @@ data "aws_iam_policy_document" "backfill_lambda_permissions" {
       "glue:GetTables",
       "glue:GetPartitions",
     ]
-    resources = ["*"] # Glue catalog resources for the 4 source tables are not known at this module's scope.
+    resources = ["*"]
   }
 
   # Read the historical data lake data the 4 source tables sit on top of.
@@ -85,7 +85,7 @@ data "aws_iam_policy_document" "backfill_lambda_permissions" {
   # Read/write the CTAS temp table's data and Athena's own query-result output.
   statement {
     sid     = "TempBucketAccess"
-    actions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+    actions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:GetBucketLocation"]
     resources = [
       aws_s3_bucket.backfill_temp.arn,
       "${aws_s3_bucket.backfill_temp.arn}/*",
@@ -151,12 +151,14 @@ data "aws_iam_policy_document" "backfill_state_machine_permissions" {
   }
 
   statement {
-    sid = "GlueCatalogRead"
+    sid = "GlueCatalogAccess"
     actions = [
       "glue:GetDatabase",
       "glue:GetTable",
       "glue:GetTables",
       "glue:GetPartitions",
+      "glue:CreateTable",
+      "glue:DeleteTable",
     ]
     resources = ["*"]
   }
@@ -174,7 +176,7 @@ data "aws_iam_policy_document" "backfill_state_machine_permissions" {
 
   statement {
     sid     = "TempBucketAccess"
-    actions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+    actions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:GetBucketLocation"]
     resources = [
       aws_s3_bucket.backfill_temp.arn,
       "${aws_s3_bucket.backfill_temp.arn}/*",

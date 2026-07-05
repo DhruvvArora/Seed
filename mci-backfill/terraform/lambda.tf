@@ -23,7 +23,7 @@ resource "aws_lambda_function" "backfill_mci" {
   runtime          = local.common_zip_args.runtime
   role             = local.common_zip_args.role
 
-  memory_size = 8192
+  memory_size = var.backfill_mci_memory_size
   timeout     = 900
 
   environment {

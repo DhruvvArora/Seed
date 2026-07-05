@@ -16,15 +16,21 @@
 --   {database}           Athena/Glue database containing the 4 source tables
 --   {temp_table}          fully qualified name for this run's temp table,
 --                         e.g. {database}.backfill_temp_{execution_id}
---   {temp_s3_path}        S3 location for the CTAS output,
---                         e.g. s3://{env}-backfill-temp/{execution_id}/
 --   {excluded_tenant_ids} comma-separated, single-quoted test/internal tenant
 --                         ids to exclude, e.g. 'tenant-test','tenant-internal'
+--
+-- No explicit output location: this table's data lands under the
+-- backfill-workgroup's own configured output location (see
+-- terraform/athena.tf). An earlier version of this query set an explicit
+-- `external_location`, which Athena rejects outright when
+-- enforce_workgroup_configuration is true on the workgroup (confirmed during
+-- the live run: "submitted with an 'external_location' property to an Athena
+-- Workgroup that enforces a centralized output location"). Rather than
+-- weaken that enforced setting, the query defers to it.
 
 CREATE TABLE {temp_table}
 WITH (
     format = 'PARQUET',
-    external_location = '{temp_s3_path}',
     write_compression = 'SNAPPY'
 ) AS
 WITH all_customer_ids AS (
