@@ -1,0 +1,6 @@
+{
+  "temp_table": "{database}.backfill_temp_livetest",
+  "athena_database": "{database}",
+  "athena_output_location": "s3://{env}-backfill-temp/query-results/",
+  "ctas_query": "CREATE TABLE {database}.backfill_temp_livetest WITH (format = 'PARQUET', external_location = 's3://{env}-backfill-temp/ctas-data/livetest/', write_compression = 'SNAPPY') AS WITH all_customer_ids AS (SELECT DISTINCT tenant_id, customer_id FROM {database}.action_events UNION SELECT DISTINCT tenant_id, customer_id FROM {database}.audience_membership UNION SELECT DISTINCT tenant_id, customer_id FROM {database}.ingested_attributes UNION SELECT DISTINCT tenant_id, customer_id FROM {database}.transactions) SELECT tenant_id, customer_id, ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY customer_id) - 1 AS row_num FROM all_customer_ids WHERE tenant_id NOT IN ('tenant-test')"
+}

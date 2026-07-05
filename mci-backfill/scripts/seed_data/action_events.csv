@@ -1,0 +1,5 @@
+tenant_id,customer_id
+t1,c1
+t1,c2
+t2,x1
+tenant-test,fake1
