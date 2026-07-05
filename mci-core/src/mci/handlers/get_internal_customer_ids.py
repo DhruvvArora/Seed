@@ -70,9 +70,17 @@ def _parse_keys(event: dict) -> list[CustomerKey]:
     for entry in raw_keys:
         tenant_id = entry["tenant_id"]
         customer_id = entry["customer_id"]
+        # Optional: a caller may pin the internal id for a new mapping. When
+        # absent (the normal case) MCI mints a fresh UUID. Backfill supplies
+        # internal == external here to create day-0 mappings.
+        internal_customer_id = entry.get("internal_customer_id")
         pk = build_partition_key(tenant_id, customer_id)
         if pk not in seen:
-            seen[pk] = CustomerKey(tenant_id=tenant_id, customer_id=customer_id)
+            seen[pk] = CustomerKey(
+                tenant_id=tenant_id,
+                customer_id=customer_id,
+                internal_customer_id=internal_customer_id,
+            )
     return list(seen.values())
 
 
@@ -127,7 +135,11 @@ def handler(event: dict, context=None) -> dict:
     if missing:
         created_uuids = run_parallel(
             missing,
-            lambda k: store.put_if_absent(k, read_only=read_only),
+            lambda k: store.put_if_absent(
+                k,
+                read_only=read_only,
+                internal_id_override=k.internal_customer_id,
+            ),
             workers=WORKERS,
         )
         for key, internal_uuid in zip(missing, created_uuids, strict=True):
