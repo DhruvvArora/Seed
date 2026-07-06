@@ -1,0 +1,8 @@
+{
+  "tenant_id": "tenant-demo",
+  "external_customer_id": "ext-cust-100",
+  "audience_changes": [
+    { "audience_id": "aud-streaming-test", "action": "delete" }
+  ],
+  "timestamp": "2026-07-06T19:10:00+00:00"
+}
