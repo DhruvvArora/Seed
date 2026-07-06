@@ -39,14 +39,12 @@ data "aws_iam_policy_document" "event_ingress_lambda_permissions" {
   }
 
   # event-enqueue + mparticle-processing: invoke MCI to resolve customer IDs.
-  # Scoped to the specific MCI function ARN (unqualified + any alias/version).
+  # Unqualified ARN covers $LATEST invocations. The LIVE alias is deferred
+  # (same as P1 and P2); override mci_function_alias to $LATEST for the dev run.
   statement {
-    sid     = "InvokeMci"
-    actions = ["lambda:InvokeFunction"]
-    resources = [
-      var.mci_get_internal_function_arn,
-      "${var.mci_get_internal_function_arn}:*",
-    ]
+    sid       = "InvokeMci"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [var.mci_get_internal_function_arn]
   }
 
   # event-enqueue + mparticle-processing: write events to the two internal streams.
