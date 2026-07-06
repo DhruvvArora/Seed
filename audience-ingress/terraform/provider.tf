@@ -3,4 +3,6 @@
 
 provider "aws" {
   region = var.aws_region
+
+  skip_metadata_api_check = true
 }

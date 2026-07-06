@@ -29,7 +29,7 @@ variable "lambda_zip_path" {
       (cd build && zip -r ../build/audience-ingress.zip .)
   EOT
   type        = string
-  default     = "build/audience-ingress.zip"
+  default     = "../build/audience-ingress.zip"
 }
 
 variable "pandas_layer_arn" {

@@ -44,9 +44,12 @@ data "aws_iam_policy_document" "lambda_permissions" {
   # audience-ingest + audience-reducer: invoke MCI to resolve customer ids.
   # Unqualified ARN covers $LATEST (LIVE alias deferred, as in P2/P3).
   statement {
-    sid       = "InvokeMci"
-    actions   = ["lambda:InvokeFunction"]
-    resources = [var.mci_get_internal_function_arn]
+    sid     = "InvokeMci"
+    actions = ["lambda:InvokeFunction"]
+    resources = [
+      var.mci_get_internal_function_arn,
+      "${var.mci_get_internal_function_arn}:${var.mci_function_alias}"
+    ]
   }
 
   # audience-reducer: upsert membership rows.

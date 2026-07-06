@@ -21,7 +21,7 @@ variable "dynamo_parallelization_factor" {
 variable "lambda_zip_path" {
   description = "Path to the packaged Lambda deployment zip (built by CI or a local script)."
   type        = string
-  default     = "build/mci-core.zip"
+  default     = "../build/mci-core.zip"
 }
 
 variable "tags" {
