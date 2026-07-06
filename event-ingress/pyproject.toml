@@ -1,0 +1,49 @@
+[project]
+name = "event-ingress"
+version = "0.1.0"
+description = "Event Ingress Service - REST API and mParticle Firehose ingest paths (Project 3)"
+requires-python = ">=3.12"
+
+# Runtime dependency on the MCI Core package: both event-enqueue and
+# mparticle-processing call MCI through mci-core's invoker to resolve
+# external customer IDs to internal UUIDs before putting events to Kinesis.
+#
+# As with mci-backfill, mci-core is a LOCAL monorepo package, not on PyPI.
+# Install at dev time with: pip install -e ../mci-core -e ".[dev]"
+dependencies = ["mci-core"]
+
+[project.optional-dependencies]
+dev = [
+    "boto3>=1.34",
+    "botocore>=1.34",
+    "pytest>=8.0",
+    "moto>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "boto3-stubs[dynamodb,kinesis,lambda]>=1.34",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: tests that need real AWS (deselect with -m 'not integration')",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
