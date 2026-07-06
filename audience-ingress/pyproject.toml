@@ -1,0 +1,55 @@
+[project]
+name = "audience-ingress"
+version = "0.1.0"
+description = "Audience Ingress Service - S3 batch and mParticle streaming audience membership ingest (Project 4)"
+requires-python = ">=3.12"
+
+# Runtime dependency on the MCI Core package: audience-ingest and
+# audience-reducer both call MCI through mci-core's invoker to resolve
+# external customer IDs to internal UUIDs. As with mci-backfill and
+# event-ingress, mci-core is a LOCAL monorepo package, not on PyPI.
+# Install at dev time with: pip install -e ../mci-core -e ".[dev]"
+#
+# NOTE ON PARQUET: audience-parquet-writer needs pyarrow/pandas to serialise
+# parquet. Those are NOT listed here and NOT shipped in the Lambda zip. They
+# come from the AWS-managed AWSSDKPandas layer (see terraform/variables.tf).
+# Keeping them out of dev deps keeps CI light; the parquet handler imports
+# awswrangler lazily inside the function so this package still imports (and
+# tests still collect) in an environment without the layer.
+dependencies = ["mci-core"]
+
+[project.optional-dependencies]
+dev = [
+    "boto3>=1.34",
+    "botocore>=1.34",
+    "pytest>=8.0",
+    "moto>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "boto3-stubs[dynamodb,kinesis,s3,lambda]>=1.34",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: tests that need real AWS (deselect with -m 'not integration')",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

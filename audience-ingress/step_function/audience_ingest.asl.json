@@ -1,0 +1,142 @@
+{
+  "Comment": "Audience batch ingest: derive tenant/audience from the S3 key, resolve members via MCI, write parquet, then atomically flip metadata to ELIGIBLE with the real size.",
+  "StartAt": "DeriveContext",
+  "States": {
+    "DeriveContext": {
+      "Type": "Pass",
+      "Comment": "Filename convention is {tenant}/{audience}/{ts}.csv.gz. Split the key so the ingest task receives explicit tenant_id/audience_id (spec: enriched by the Step Function, not parsed in the Lambda).",
+      "Parameters": {
+        "s3_bucket.$": "$.s3_bucket",
+        "s3_key.$": "$.s3_key",
+        "tenant_id.$": "States.ArrayGetItem(States.StringSplit($.s3_key, '/'), 0)",
+        "audience_id.$": "States.ArrayGetItem(States.StringSplit($.s3_key, '/'), 1)"
+      },
+      "Next": "DecompressAndMap"
+    },
+    "DecompressAndMap": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ingest_function_arn}",
+        "Payload": {
+          "s3_bucket.$": "$.s3_bucket",
+          "s3_key.$": "$.s3_key",
+          "tenant_id.$": "$.tenant_id",
+          "audience_id.$": "$.audience_id"
+        }
+      },
+      "ResultSelector": {
+        "internal_customer_ids.$": "$.Payload.internal_customer_ids",
+        "count.$": "$.Payload.count"
+      },
+      "ResultPath": "$.ingest",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.TooManyRequestsException",
+            "Lambda.ServiceException",
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Next": "WriteParquet"
+    },
+    "WriteParquet": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${parquet_function_arn}",
+        "Payload": {
+          "tenant_id.$": "$.tenant_id",
+          "audience_id.$": "$.audience_id",
+          "internal_customer_ids.$": "$.ingest.internal_customer_ids"
+        }
+      },
+      "ResultSelector": {
+        "parquet_path.$": "$.Payload.parquet_path",
+        "run_date.$": "$.Payload.run_date",
+        "count.$": "$.Payload.count"
+      },
+      "ResultPath": "$.parquet",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.TooManyRequestsException",
+            "Lambda.ServiceException",
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Next": "UpdateMetadata"
+    },
+    "UpdateMetadata": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Comment": "Single atomic write: state -> ELIGIBLE and size -> real member count in the same updateItem, so size never appears as a partial count. Until this runs, size stays at the -1 not-loaded sentinel.",
+      "Parameters": {
+        "TableName": "${metadata_table_name}",
+        "Key": {
+          "partition_key": {
+            "S.$": "States.Format('{}#{}', $.tenant_id, $.audience_id)"
+          },
+          "sort_key": { "S": "METADATA" }
+        },
+        "UpdateExpression": "SET #st = :st, #sz = :sz, parquet_path = :pp, run_date = :rd, last_upload_time = :lut",
+        "ExpressionAttributeNames": {
+          "#st": "state",
+          "#sz": "size"
+        },
+        "ExpressionAttributeValues": {
+          ":st": { "S": "ELIGIBLE" },
+          ":sz": { "N.$": "States.Format('{}', $.parquet.count)" },
+          ":pp": { "S.$": "$.parquet.parquet_path" },
+          ":rd": { "S.$": "$.parquet.run_date" },
+          ":lut": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "End": true
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${alert_topic_arn}",
+        "Subject": "audience-ingress batch failed",
+        "Message.$": "States.Format('Audience ingest failed for key {}. Error: {}', $.s3_key, States.JsonToString($.error))"
+      },
+      "Next": "IngestFailed"
+    },
+    "IngestFailed": {
+      "Type": "Fail",
+      "Error": "AudienceIngestFailed",
+      "Cause": "Batch ingest failed; see the SNS alert and the failed state's error output."
+    }
+  }
+}

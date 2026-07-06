@@ -30,3 +30,4 @@ build/
 
 # Lambda invoke test output
 response*.json
+*.csv.gz
