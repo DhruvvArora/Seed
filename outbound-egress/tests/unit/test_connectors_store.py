@@ -79,7 +79,10 @@ def test_list_connectors_excludes_integration_rows(table):
         _connector(
             "MyMParticleIntegration-ACTIVATED",
             integration=IntegrationMetadata(
-                integration_type="mparticle", environment="prod", encrypted_credentials="c"
+                integration_name="MyMParticleIntegration",
+                integration_type="mparticle",
+                environment="prod",
+                encrypted_credentials="c",
             ),
         )
     )
@@ -96,7 +99,10 @@ def test_list_integrations_returns_only_integration_rows(table):
         _connector(
             "MyMParticleIntegration-ACTIVATED",
             integration=IntegrationMetadata(
-                integration_type="mparticle", environment="prod", encrypted_credentials="c"
+                integration_name="MyMParticleIntegration",
+                integration_type="mparticle",
+                environment="prod",
+                encrypted_credentials="c",
             ),
         )
     )

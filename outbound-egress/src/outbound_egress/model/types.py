@@ -85,14 +85,22 @@ class IntegrationMetadata:
     integration fanning out into 3-6 connector rows, one per offer state).
     Absent on plain webhook rows created via CreateConnector. This is the
     single source of truth ListConnectors and ListIntegrations filter on.
+
+    integration_name is stored explicitly (rather than derived by parsing the
+    "-STATE" suffix off the connector's own name) so DeleteIntegration can
+    reliably find every row belonging to one integration, without any risk
+    of an integration name that happens to end in something resembling an
+    offer state being parsed incorrectly.
     """
 
+    integration_name: str
     integration_type: str
     environment: str
     encrypted_credentials: str
 
     def to_item(self) -> dict[str, Any]:
         return {
+            "integration_name": self.integration_name,
             "integration_type": self.integration_type,
             "environment": self.environment,
             "encrypted_credentials": self.encrypted_credentials,
@@ -103,6 +111,7 @@ class IntegrationMetadata:
         if not raw:
             return None
         return IntegrationMetadata(
+            integration_name=raw["integration_name"],
             integration_type=raw["integration_type"],
             environment=raw["environment"],
             encrypted_credentials=raw["encrypted_credentials"],
@@ -242,6 +251,33 @@ class Connector:
         distinguishable by the presence of the integration attribute."""
         return self.integration is not None
 
+    def to_summary_dict(self) -> dict[str, Any]:
+        """External-facing view used by aqueduct-writer and aqueduct-reader.
+
+        Omits the encrypted destination blob. Callers manage destinations
+        through CreateConnector/CreateIntegration/UpdateConnector and never
+        need the ciphertext echoed back; aqueduct-reader in particular is
+        invoked by whatever internal service asks for it, so widening what
+        it can return would widen the blast radius of anything that can
+        invoke it.
+        """
+        summary: dict[str, Any] = {
+            "tenant_id": self.tenant_id,
+            "name": self.name,
+            "payload_type": self.payload_type,
+            "destination_type": self.destination_type,
+            "transformation_name": self.transformation_name,
+            "enabled": self.enabled,
+            "is_integration": self.is_integration,
+        }
+        if self.connection_status is not None:
+            summary["connection_status"] = self.connection_status.to_item()
+        if self.integration is not None:
+            summary["integration_name"] = self.integration.integration_name
+            summary["integration_type"] = self.integration.integration_type
+            summary["environment"] = self.integration.environment
+        return summary
+
     def to_item(self) -> dict[str, Any]:
         item: dict[str, Any] = {
             "partition_key": self.tenant_id,
@@ -342,6 +378,22 @@ class Progress:
             metadata=dict(raw.get("metadata", {})),
             all_outcomes=list(raw.get("all_outcomes", [])),
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        """The JSON shape handed to apply_transformation and, absent a
+        transformation, delivered to the destination as-is."""
+        return {
+            "tenant_id": self.tenant_id,
+            "internal_customer_id": self.internal_customer_id,
+            "offer_id": self.offer_id,
+            "campaign_id": self.campaign_id,
+            "connectors": list(self.connectors),
+            "status": self.status,
+            "campaign_window_start": self.campaign_window_start,
+            "campaign_window_end": self.campaign_window_end,
+            "metadata": dict(self.metadata),
+            "all_outcomes": list(self.all_outcomes),
+        }
 
 
 @dataclass(frozen=True)

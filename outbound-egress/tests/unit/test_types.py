@@ -52,6 +52,7 @@ def test_connector_is_integration_when_integration_attribute_present():
         destination_type=DESTINATION_WEBHOOK,
         destination="ciphertext-blob",
         integration=IntegrationMetadata(
+            integration_name="MyMParticleIntegration",
             integration_type="mparticle",
             environment="prod",
             encrypted_credentials="cred-ciphertext",

@@ -27,7 +27,7 @@ from moto import mock_aws
 
 import outbound_egress.handlers.aqueduct_distributor as distributor
 from outbound_egress.crypto.kms import DestinationCrypto
-from outbound_egress.model.types import DESTINATION_WEBHOOK, Connector
+from outbound_egress.model.types import DESTINATION_WEBHOOK, Connector, Transformation
 from outbound_egress.store.connectors import ConnectorStore
 from outbound_egress.store.transformations import TransformationStore
 
@@ -154,6 +154,78 @@ def test_distributor_fans_out_within_a_progress_and_reuses_cache_across_progress
         assert connector_a.connection_status.status_code == 200
         assert connector_b.connection_status is not None
         assert connector_b.connection_status.status_code == 200
+
+
+def test_distributor_applies_configured_jq_transformation_before_delivery(monkeypatch):
+    with mock_aws():
+        _create_tables()
+        dynamodb_resource = boto3.resource("dynamodb", region_name="us-east-2")
+        kms_client = boto3.client("kms", region_name="us-east-2")
+        kms_key_id = kms_client.create_key(Description="test")["KeyMetadata"]["KeyId"]
+
+        crypto = DestinationCrypto(kms_client=kms_client)
+        ciphertext = crypto.encrypt(kms_key_id, {"url": "https://mparticle.example.com/hook"})
+
+        connector_store = ConnectorStore(CONNECTORS_TABLE, dynamodb_resource=dynamodb_resource)
+        connector_store.create_connector(
+            Connector(
+                tenant_id="tenant-abc",
+                name="MParticleWebhook",
+                payload_type="ACHIEVED",
+                destination_type=DESTINATION_WEBHOOK,
+                destination=ciphertext,
+                transformation_name="mparticle-s2s",
+            )
+        )
+
+        transformation_store = TransformationStore(
+            TRANSFORMATIONS_TABLE, dynamodb_resource=dynamodb_resource
+        )
+        dynamodb_resource.Table(TRANSFORMATIONS_TABLE).put_item(
+            Item=Transformation(
+                tenant_id="tenant-abc",
+                name="mparticle-s2s",
+                jq_script=(
+                    '{event_type: "commerce_event", customer_id: .internal_customer_id, '
+                    "offer_id: .offer_id}"
+                ),
+            ).to_item()
+        )
+
+        monkeypatch.setattr(distributor, "_connector_store", connector_store)
+        monkeypatch.setattr(distributor, "_transformation_store", transformation_store)
+        monkeypatch.setattr(distributor, "_destination_crypto", crypto)
+
+        batch = {
+            "edge_time": "2026-07-06T12:00:00+00:00",
+            "progresses": [
+                {
+                    "tenant_id": "tenant-abc",
+                    "internal_customer_id": "uuid-1",
+                    "offer_id": "offer-1",
+                    "campaign_id": "campaign-1",
+                    "connectors": ["MParticleWebhook"],
+                    "status": "ACHIEVED",
+                }
+            ],
+        }
+        event = {"Records": [_kinesis_record(batch)]}
+
+        with responses_module.RequestsMock() as rsps:
+            rsps.add(responses_module.POST, "https://mparticle.example.com/hook", status=200)
+
+            distributor.handler(event, None)
+
+            assert len(rsps.calls) == 1
+            sent_body = json.loads(rsps.calls[0].request.body)
+            # The transformed shape, not the raw Progress.to_dict() shape:
+            # no "campaign_id", no "connectors" list, a renamed "event_type"
+            # field that only the jq script would have produced.
+            assert sent_body == {
+                "event_type": "commerce_event",
+                "customer_id": "uuid-1",
+                "offer_id": "offer-1",
+            }
 
 
 def test_distributor_writes_failure_status_and_continues_other_connectors(monkeypatch):
