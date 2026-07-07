@@ -52,13 +52,15 @@ def deliver_webhook(
 
     if 500 <= response.status_code < 600:
         raise RetryableDeliveryError(
-            f"webhook to {destination.url} returned {response.status_code}"
+            f"webhook to {destination.url} returned {response.status_code}",
+            status_code=response.status_code,
         )
 
     if 400 <= response.status_code < 500:
         raise NonRetryableDeliveryError(
             f"webhook to {destination.url} returned {response.status_code}, "
-            "connector needs operator attention"
+            "connector needs operator attention",
+            status_code=response.status_code,
         )
 
     return DeliveryResult(success=True, status_code=response.status_code)

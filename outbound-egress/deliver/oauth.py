@@ -117,7 +117,8 @@ def exchange_for_access_token(
 
     if response.status_code >= 400:
         raise RetryableDeliveryError(
-            f"token exchange with {destination.token_url} returned {response.status_code}"
+            f"token exchange with {destination.token_url} returned {response.status_code}",
+            status_code=response.status_code,
         )
 
     body = response.json()
@@ -155,14 +156,16 @@ def deliver_oauth(
 
     if 500 <= response.status_code < 600:
         raise RetryableDeliveryError(
-            f"oauth delivery to {destination.destination_url} returned {response.status_code}"
+            f"oauth delivery to {destination.destination_url} returned {response.status_code}",
+            status_code=response.status_code,
         )
 
     if 400 <= response.status_code < 500:
         raise NonRetryableDeliveryError(
             f"oauth delivery to {destination.destination_url} returned "
             f"{response.status_code} after a token refresh, connector needs "
-            "operator attention"
+            "operator attention",
+            status_code=response.status_code,
         )
 
     return DeliveryResult(success=True, status_code=response.status_code)
