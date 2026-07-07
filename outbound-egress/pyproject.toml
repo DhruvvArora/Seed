@@ -9,9 +9,13 @@ requires-python = ">=3.12"
 # plague stream it has already been through MCI upstream, so aqueduct-distributor
 # never resolves identity itself.
 #
-# PyJWT and cryptography are real runtime dependencies (needed for the JWT OAuth
-# delivery path) and ARE bundled into the Lambda zip at build time, since AWS
-# does not provide a managed layer for either.
+# PyJWT, cryptography, and requests are real runtime dependencies and ARE
+# bundled into the Lambda zip at build time, since AWS does not provide a
+# managed layer for any of them. requests is used for both webhook delivery
+# and the JWT OAuth token exchange; urllib3 (already present transitively via
+# boto3/botocore in the Lambda runtime) was considered to avoid bundling a
+# new dependency, but requests' simpler timeout/exception model and its
+# `responses` test double (see dev deps) made it the better default here.
 #
 # NOTE ON JQ: the jq package is NOT listed here and NOT shipped in the Lambda
 # zip. It comes from a custom-built Lambda layer (see terraform/variables.tf),
@@ -22,6 +26,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pyjwt>=2.9",
     "cryptography>=42.0",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
