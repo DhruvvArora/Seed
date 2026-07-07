@@ -1,0 +1,63 @@
+[project]
+name = "outbound-egress"
+version = "0.1.0"
+description = "Outbound Connector Engine - fan out and deliver offer progress events to external systems (Project 5)"
+requires-python = ">=3.12"
+
+# NOTE ON DEPENDENCIES: unlike mci-backfill, event-ingress, and audience-ingress,
+# this package does NOT depend on mci-core. By the time an event reaches the
+# plague stream it has already been through MCI upstream, so aqueduct-distributor
+# never resolves identity itself.
+#
+# PyJWT and cryptography are real runtime dependencies (needed for the JWT OAuth
+# delivery path) and ARE bundled into the Lambda zip at build time, since AWS
+# does not provide a managed layer for either.
+#
+# NOTE ON JQ: the jq package is NOT listed here and NOT shipped in the Lambda
+# zip. It comes from a custom-built Lambda layer (see terraform/variables.tf),
+# because it wraps a compiled C extension (libjq + oniguruma, statically
+# linked) and AWS has no managed layer for it, unlike AWSSDKPandas for pyarrow.
+# The transform module imports jq lazily inside the function so this package
+# still imports (and tests still collect) in an environment without the layer.
+dependencies = [
+    "pyjwt>=2.9",
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "boto3>=1.34",
+    "botocore>=1.34",
+    "pytest>=8.0",
+    "moto>=5.0",
+    "responses>=0.25",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "boto3-stubs[dynamodb,kinesis,sts,kms]>=1.34",
+    "types-jsonschema",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: tests that need real AWS (deselect with -m 'not integration')",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
