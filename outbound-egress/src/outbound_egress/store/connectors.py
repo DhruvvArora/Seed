@@ -106,6 +106,24 @@ class ConnectorStore:
                 return False
             raise
 
+    def delete_integration(self, tenant_id: str, integration_name: str) -> list[str]:
+        """Removes every connector row belonging to one integration.
+
+        Distinct from delete_connector: an integration is 3-6 rows (one per
+        offer state), and deleting the integration means removing all of
+        them, not just the row named exactly integration_name (which would
+        not even exist as a row on its own; only the "{name}-{STATE}" rows
+        do). Returns the list of connector names that were deleted.
+        """
+        matching = [
+            c.name
+            for c in self.list_integrations(tenant_id)
+            if c.integration is not None and c.integration.integration_name == integration_name
+        ]
+        for name in matching:
+            self.delete_connector(tenant_id, name)
+        return matching
+
     def update_connection_status(
         self, tenant_id: str, connector_name: str, status: ConnectionStatus
     ) -> None:

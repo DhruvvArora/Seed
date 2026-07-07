@@ -22,6 +22,7 @@ import base64
 import json
 
 import boto3
+import pytest
 import responses as responses_module
 from moto import mock_aws
 
@@ -157,6 +158,14 @@ def test_distributor_fans_out_within_a_progress_and_reuses_cache_across_progress
 
 
 def test_distributor_applies_configured_jq_transformation_before_delivery(monkeypatch):
+    # Guarded the same way test_jq_transform.py is: the jq package's wheel
+    # availability varies by platform/arch (this project's actual deployment
+    # target is Linux x86_64 via the custom layer, verified separately; a
+    # dev machine, e.g. macOS, may not have an importable jq wheel at all).
+    # Skip cleanly here rather than failing with a confusing "no module
+    # named jq" buried inside the distributor's own error handling.
+    pytest.importorskip("jq")
+
     with mock_aws():
         _create_tables()
         dynamodb_resource = boto3.resource("dynamodb", region_name="us-east-2")
