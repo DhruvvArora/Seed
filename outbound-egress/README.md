@@ -31,11 +31,34 @@ compiled extension, which showed only standard glibc dependencies). That
 means the layer is just `pip install jq --target python/` zipped up, no
 from-source manylinux Docker build required. The layer ARN is stored as a
 Terraform variable (see `terraform/variables.tf`), the same pattern used for
-the AWSSDKPandas layer in audience-ingress.
+the AWSSDKPandas layer in audience-ingress, except this one has no default
+since it is self-published, not an AWS-managed ARN.
 
 **This layer needs to be rebuilt and republished whenever the `jq` package
 version changes, or whenever the Lambda runtime moves off cp312/Amazon
 Linux 2023.**
+
+## The three Lambdas
+
+- **aqueduct-distributor**: the plague stream consumer. Per BatchProgress
+  message, processes progress events sequentially (to preserve per-customer
+  ordering) and fans out to that event's connectors concurrently via
+  ThreadPoolExecutor. Owns the invocation-scoped KMS DecryptCache (created
+  fresh per invocation, never at module scope) and the module-scope
+  OAuthTokenCache (safe at module scope, unlike the decrypt cache; see
+  crypto/kms.py and deliver/oauth.py for why these two are scoped
+  differently). Retries RetryableDeliveryError up to 3 times across all
+  three destination types; isolates NonRetryableDeliveryError and exhausted
+  retries per connector so one bad connector never blocks the batch.
+- **aqueduct-writer**: CRUD for connectors, invoked by the GraphQL API
+  layer. CreateConnector, CreateIntegration (fans one integration out into
+  one row per offer state), UpdateConnector, DeleteConnector (single row),
+  DeleteIntegration (every row for one integration, distinct from
+  DeleteConnector), ListConnectors, ListIntegrations.
+- **aqueduct-reader**: a thin, read-only, batch-oriented Lambda for other
+  internal AWS services that need connector configs without going through
+  GraphQL. Never decrypts; returns the same destination-omitting summary
+  view aqueduct-writer's reads return.
 
 ## Layout
 
@@ -47,11 +70,13 @@ src/outbound_egress/
     aqueduct_reader.py        # internal connector config loader
   model/                      # Connector, Destination, BatchProgress, etc.
   store/                      # DynamoDB access for connectors, transformations
-  crypto/                     # KMS encrypt/decrypt for destination configs
+  crypto/                     # KMS encrypt/decrypt + the invocation-scoped decrypt cache
   transform/                  # JQ transformation application
   progress/                   # BatchProgress parsing
   deliver/                    # webhook, kinesis, oauth delivery implementations
-tests/unit/                   # scaffold now; per-layer tests as they land
+tests/unit/                   # one file per module, 61 tests total
+terraform/                    # plague stream, DynamoDB tables, KMS key, 3 Lambdas, IAM
+scripts/seed_data/            # RUNBOOK.md + fixtures for the live deploy-verify-destroy cycle
 ```
 
 ## Checks (what CI runs)
@@ -64,5 +89,12 @@ mypy src
 pytest -m "not integration"
 ```
 
-Terraform (plague stream, connectors/transformations DynamoDB tables, three
-Lambdas, custom jq layer, KMS key, IAM) comes as the pipeline is built out.
+## Deploying and verifying against real AWS
+
+See `terraform/README.md` for the Terraform module itself (including how to
+build and publish the jq layer, which must happen before the first
+`terraform apply`), and `scripts/seed_data/RUNBOOK.md` for the live
+deploy-verify-destroy cycle, which walks through the spec's three manual
+verification scenarios: a BatchProgress event reaching a real webhook,
+disabling a connector and confirming delivery stops, and creating an
+mParticle integration and confirming 3 connector rows land in DynamoDB.
