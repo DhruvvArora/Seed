@@ -31,3 +31,15 @@ build/
 # Lambda invoke test output
 response*.json
 *.csv.gz
+
+# Build artifacts
+outbound-egress/jq-layer-build/
+outbound-egress/jq-layer.zip
+outbound-egress/outbound-egress.zip
+outbound-egress/build/
+
+# Live-run output files
+outbound-egress/scripts/seed_data/*.json
+!outbound-egress/scripts/seed_data/sample_batch_progress.json
+!outbound-egress/scripts/seed_data/create_connector_payload.json
+!outbound-egress/scripts/seed_data/create_integration_payload.json

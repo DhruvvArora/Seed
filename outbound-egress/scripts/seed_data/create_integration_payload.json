@@ -1,0 +1,17 @@
+{
+  "operation": "CreateIntegration",
+  "input": {
+    "tenant_id": "tenant-demo",
+    "integration_name": "DemoMParticleIntegration",
+    "integration_type": "mparticle",
+    "environment": "dev",
+    "event_types": ["READY", "ACTIVATED", "ACHIEVED"],
+    "destination_type": "webhook",
+    "destination": {
+      "url": "https://webhook.site/REPLACE-WITH-A-REAL-TEST-URL",
+      "method": "POST",
+      "headers": {}
+    },
+    "credentials": { "api_key": "demo-not-a-real-secret" }
+  }
+}
