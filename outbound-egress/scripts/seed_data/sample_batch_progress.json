@@ -1,0 +1,18 @@
+{
+  "trace": { "trace_id": "seed-data-test-001" },
+  "edge_time": "2026-07-07T12:00:00+00:00",
+  "progresses": [
+    {
+      "tenant_id": "tenant-demo",
+      "internal_customer_id": "uuid-demo-0001",
+      "offer_id": "offer-holiday-q4",
+      "campaign_id": "campaign-holiday-q4",
+      "campaign_window_start": "2026-11-01",
+      "campaign_window_end": "2026-12-31",
+      "connectors": ["DemoWebhook"],
+      "status": "ACHIEVED",
+      "metadata": { "source": "seed-data-runbook" },
+      "all_outcomes": ["ACTIVATED", "PROGRESSED", "ACHIEVED"]
+    }
+  ]
+}

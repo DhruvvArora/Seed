@@ -1,0 +1,14 @@
+{
+  "operation": "CreateConnector",
+  "input": {
+    "tenant_id": "tenant-demo",
+    "name": "DemoWebhook",
+    "payload_type": "ACHIEVED",
+    "destination_type": "webhook",
+    "destination": {
+      "url": "https://webhook.site/REPLACE-WITH-A-REAL-TEST-URL",
+      "method": "POST",
+      "headers": {}
+    }
+  }
+}
